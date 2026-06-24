@@ -66,11 +66,22 @@ things make this work without breaking playback:
   this, YouTube and similar players freeze the picture (audio keeps going) the
   moment their window is fully covered.
 
-If a browser or player *still* pauses its video when covered, launch it with
-native occlusion detection disabled:
+If a browser or player *still* pauses its video when covered, disable its
+window-occlusion detection. The **Troubleshooting tab** in the app has a
+copy button for each browser; the same settings are:
+
+| Browser            | Setting                                                                 |
+|--------------------|-------------------------------------------------------------------------|
+| Brave              | `brave://flags/#calculate-native-win-occlusion` → Disabled → Relaunch   |
+| Chrome             | `chrome://flags/#calculate-native-win-occlusion` → Disabled → Relaunch  |
+| Edge               | `edge://flags/#calculate-native-win-occlusion` → Disabled → Restart     |
+| Opera / Vivaldi    | `opera://flags/#…` / `vivaldi://flags/#…` (same flag)                    |
+| Firefox            | `about:config` → `widget.windows.window_occlusion_tracking.enabled` = `false` |
+
+Cross-platform fallback — relaunch any Chromium browser with these flags
+(works on Windows, macOS and Linux):
 
 ```bash
-# Chrome / Edge / Brave (Chromium)
 chrome --disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows
 ```
 

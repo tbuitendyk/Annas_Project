@@ -43,6 +43,31 @@ class ControlPanel:
     RED     = "#ef4444"
     PURPLE  = "#a78bfa"
 
+    # Per-browser ways to disable window-occlusion detection — the thing that
+    # freezes a covered video while audio keeps playing. (name, copy-value,
+    # how-to). The flags pages apply on Windows; the command-line flag below
+    # covers macOS/Linux too.
+    BROWSER_FIXES = [
+        ("Brave", "brave://flags/#calculate-native-win-occlusion",
+         "Paste this in the address bar, set “Calculate window occlusion "
+         "on Windows” to Disabled, then click Relaunch."),
+        ("Chrome", "chrome://flags/#calculate-native-win-occlusion",
+         "Paste this in the address bar, set the occlusion flag to Disabled, "
+         "then Relaunch."),
+        ("Edge", "edge://flags/#calculate-native-win-occlusion",
+         "Paste this in the address bar, set the occlusion flag to Disabled, "
+         "then Restart."),
+        ("Opera / Vivaldi", "opera://flags/#calculate-native-win-occlusion",
+         "Chromium-based, same flag. Vivaldi uses vivaldi://flags/# instead "
+         "of opera://flags/#."),
+        ("Firefox", "widget.windows.window_occlusion_tracking.enabled",
+         "Open about:config, search this preference, and set it to false. "
+         "Takes effect immediately — no restart needed."),
+    ]
+    # Cross-platform fallback: relaunch any Chromium browser with these flags.
+    LAUNCH_FLAGS = ("--disable-features=CalculateNativeWinOcclusion "
+                    "--disable-backgrounding-occluded-windows")
+
     def __init__(self, pipeline):
         self.pipeline = pipeline
         self.root = tk.Tk()
@@ -147,17 +172,20 @@ class ControlPanel:
         self._nb.pack(fill="both", expand=True, padx=20, pady=(0, 12))
 
         # Tab frames
-        monitor_tab   = tk.Frame(self._nb, bg=self.BG)
-        training_tab  = tk.Frame(self._nb, bg=self.BG)
-        wordlist_tab  = tk.Frame(self._nb, bg=self.BG)
+        monitor_tab       = tk.Frame(self._nb, bg=self.BG)
+        training_tab      = tk.Frame(self._nb, bg=self.BG)
+        wordlist_tab      = tk.Frame(self._nb, bg=self.BG)
+        troubleshoot_tab  = tk.Frame(self._nb, bg=self.BG)
 
-        self._nb.add(monitor_tab,  text="  Monitor  ")
-        self._nb.add(training_tab, text="  Training  ")
-        self._nb.add(wordlist_tab, text="  Word List  ")
+        self._nb.add(monitor_tab,      text="  Monitor  ")
+        self._nb.add(training_tab,     text="  Training  ")
+        self._nb.add(wordlist_tab,     text="  Word List  ")
+        self._nb.add(troubleshoot_tab, text="  Troubleshooting  ")
 
         self._build_monitor_tab(monitor_tab)
         self._build_training_tab(training_tab)
         self._build_wordlist_tab(wordlist_tab)
+        self._build_troubleshooting_tab(troubleshoot_tab)
 
     # ── Monitor tab ───────────────────────────────────────────────────────
 
@@ -627,6 +655,105 @@ class ControlPanel:
             self._wl_status.config(
                 text="Word list saved ✓ (will apply next time filter is enabled)",
                 fg=self.GREEN)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # TROUBLESHOOTING TAB
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _build_troubleshooting_tab(self, parent):
+        # Header
+        top = tk.Frame(parent, bg=self.BG, pady=10)
+        top.pack(fill="x", padx=16)
+        tk.Label(top, text="Troubleshooting",
+                 font=("Helvetica Neue", 14, "bold"),
+                 bg=self.BG, fg=self.TEXT).pack(side="left")
+
+        # Scrollable body (several browser cards may overflow the window)
+        container = tk.Frame(parent, bg=self.BG)
+        container.pack(fill="both", expand=True, padx=16, pady=(0, 4))
+        canvas = tk.Canvas(container, bg=self.BG, highlightthickness=0)
+        scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        body = tk.Frame(canvas, bg=self.BG)
+        body.bind("<Configure>",
+                  lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=body, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # ── Section: covered-video freeze ─────────────────────────────────
+        tk.Label(body, text="Video freezes when the View window covers the player",
+                 font=("Helvetica Neue", 12, "bold"),
+                 bg=self.BG, fg=self.TEXT, anchor="w").pack(fill="x", pady=(4, 2))
+        tk.Label(
+            body,
+            text=("CleanStream holds the View window slightly translucent so most "
+                  "browsers keep playing while it's covered. If your browser still "
+                  "freezes the picture (audio keeps going), turn off its window-"
+                  "occlusion detection using the setting for your browser below. "
+                  "Click Copy, paste it into the browser, and apply."),
+            font=("Helvetica Neue", 10), bg=self.BG, fg=self.MUTED,
+            wraplength=720, justify="left", anchor="w").pack(fill="x", pady=(0, 10))
+
+        for name, value, desc in self.BROWSER_FIXES:
+            self._make_fix_card(body, name, value, desc)
+
+        # ── Command-line fallback (cross-platform) ────────────────────────
+        tk.Label(body, text="Command-line alternative (any Chromium browser · any OS)",
+                 font=("Helvetica Neue", 12, "bold"),
+                 bg=self.BG, fg=self.TEXT, anchor="w").pack(fill="x", pady=(14, 2))
+        tk.Label(
+            body,
+            text=("Fully quit the browser, then start it with these flags. Works on "
+                  "Windows, macOS and Linux — useful where the flags page above isn't "
+                  "available."),
+            font=("Helvetica Neue", 10), bg=self.BG, fg=self.MUTED,
+            wraplength=720, justify="left", anchor="w").pack(fill="x", pady=(0, 6))
+        self._make_copy_row(body, self.LAUNCH_FLAGS)
+
+        # Status line (shared across copy buttons)
+        self._ts_status = tk.Label(parent, text="",
+                                   font=("Helvetica Neue", 10),
+                                   bg=self.BG, fg=self.GREEN)
+        self._ts_status.pack(pady=(0, 4))
+
+    def _make_fix_card(self, parent, name, value, desc):
+        card = tk.Frame(parent, bg=self.SURFACE, padx=12, pady=8,
+                        highlightthickness=1, highlightbackground="#2d3148")
+        card.pack(fill="x", pady=4)
+        tk.Label(card, text=name, font=("Helvetica Neue", 11, "bold"),
+                 bg=self.SURFACE, fg=self.ACCENT, anchor="w").pack(fill="x")
+        tk.Label(card, text=desc, font=("Helvetica Neue", 10),
+                 bg=self.SURFACE, fg=self.MUTED, wraplength=680,
+                 justify="left", anchor="w").pack(fill="x", pady=(2, 6))
+        self._make_copy_row(card, value, bg=self.SURFACE)
+
+    def _make_copy_row(self, parent, value, bg=None):
+        bg = bg or self.BG
+        row = tk.Frame(parent, bg=bg)
+        row.pack(fill="x")
+        var = tk.StringVar(value=value)
+        entry = tk.Entry(row, textvariable=var, font=("Courier New", 10),
+                         readonlybackground=self.BG, fg=self.TEXT,
+                         insertbackground=self.TEXT, relief="flat", bd=4,
+                         state="readonly")
+        entry.pack(side="left", fill="x", expand=True)
+        tk.Button(row, text="Copy", font=("Helvetica Neue", 10),
+                  bg=self.ACCENT, fg="white", relief="flat", padx=10, pady=2,
+                  activebackground="#3b5bdb", cursor="hand2",
+                  command=lambda v=value: self._copy_to_clipboard(v)).pack(
+                  side="right", padx=(8, 0))
+
+    def _copy_to_clipboard(self, text: str):
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            if getattr(self, "_ts_status", None) is not None:
+                self._ts_status.config(text=f"Copied: {text}", fg=self.GREEN)
+        except Exception as e:
+            logger.warning(f"Clipboard copy failed: {e}")
+            if getattr(self, "_ts_status", None) is not None:
+                self._ts_status.config(text=f"Copy failed: {e}", fg=self.RED)
 
     # ══════════════════════════════════════════════════════════════════════
     # TRAINING LOGIC
