@@ -54,6 +54,26 @@ python main.py
 
 On first run, a setup wizard will ask for your monitor and audio device. Settings are saved to `cleanstream.toml`.
 
+### Watching on the same monitor as the media (View Mode)
+
+Open **View Mode** and drag the window onto the monitor your media is on. Two
+things make this work without breaking playback:
+
+- The View window is **excluded from the screen capture** (Windows display
+  affinity, or a region mask elsewhere), so it never captures its own output.
+- The window is held **very slightly translucent** (254/255), so Chromium
+  browsers don't count it as an occluder and keep playing the video. Without
+  this, YouTube and similar players freeze the picture (audio keeps going) the
+  moment their window is fully covered.
+
+If a browser or player *still* pauses its video when covered, launch it with
+native occlusion detection disabled:
+
+```bash
+# Chrome / Edge / Brave (Chromium)
+chrome --disable-features=CalculateNativeWinOcclusion --disable-backgrounding-occluded-windows
+```
+
 ## Project structure
 
 ```

@@ -19,6 +19,18 @@ from loguru import logger
 FLAGGED_LOG    = Path("flagged_audio.jsonl")
 TRAINING_DATA  = Path("models/audio/training_data.jsonl")
 
+# View window opacity. Held just under fully solid (254/255) on purpose:
+# Chromium browsers (YouTube et al.) and some media players run native
+# window-occlusion detection and FREEZE the video feed — audio keeps going —
+# the moment their window is fully covered by an *opaque* window. That's
+# exactly what the View window does when it sits on the media monitor.
+# Chromium treats a layered window with alpha < 255 as non-opaque and skips
+# it as an occluder, so the source keeps rendering. 254/255 is visually
+# indistinguishable from solid while still tripping that check. Any value
+# < 1.0 works; we stay as close to opaque as possible to minimise the (~0.4%)
+# bleed-through of the live media behind the window.
+VIEW_WINDOW_OPACITY = 0.996
+
 
 class ControlPanel:
     BG      = "#0f1117"
@@ -1086,6 +1098,10 @@ class ControlPanel:
         # media monitor without feeding its own output back in.
         self._apply_capture_exclusion()
 
+        # Keep the media source (browser/player) from pausing its video feed
+        # when this window covers it.
+        self._prevent_source_pause()
+
         # Withdraw control panel to save CPU (no preview rendering while
         # view window is open), but schedule after() on the Toplevel win
         # so the tick loop keeps firing regardless.
@@ -1126,15 +1142,46 @@ class ControlPanel:
             self._view_hint.config(
                 text=f"Space/click pause  |  F11 fullscreen  |  Esc close   ·   {note}")
 
+    def _prevent_source_pause(self):
+        """
+        Stop the media source (YouTube/Chromium, some players) from pausing its
+        video when the View window covers it.
+
+        These apps run native window-occlusion detection and freeze the video
+        feed (audio keeps going) once their window is fully hidden behind an
+        opaque window. Making the View window very slightly translucent — a
+        layered window with alpha < 255, set here via Tk's '-alpha' — means the
+        browser no longer counts it as an occluder, so playback continues. The
+        ~0.4% transparency is imperceptible. If a particular browser/player
+        still pauses, launch it with native occlusion disabled (see README).
+        """
+        win = self._view_win
+        if win is None:
+            return
+        try:
+            win.attributes("-alpha", VIEW_WINDOW_OPACITY)
+        except Exception as e:
+            logger.warning(f"Could not set View window opacity (anti-occlusion): {e}")
+
     def _view_toggle_fullscreen(self):
         win = self._view_win
         if win is None:
             return
         win.attributes("-fullscreen", not win.attributes("-fullscreen"))
-        # Re-assert exclusion — toggling fullscreen can reset window styles on
-        # some platforms. Defer briefly so the window state settles first.
+        # Re-assert exclusion + anti-occlusion — toggling fullscreen can reset
+        # window styles on some platforms. Defer briefly so state settles.
         from capture.capture import exclude_from_capture
-        win.after(60, lambda: exclude_from_capture(win.winfo_id()))
+
+        def _reassert():
+            if self._view_win is None:
+                return
+            exclude_from_capture(win.winfo_id())
+            try:
+                win.attributes("-alpha", VIEW_WINDOW_OPACITY)
+            except Exception:
+                pass
+
+        win.after(60, _reassert)
 
     def _publish_exclusion_rect(self):
         """
