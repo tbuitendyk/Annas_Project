@@ -34,6 +34,12 @@ class Pipeline:
         # Shared pause state — set = paused
         self._pause_event = threading.Event()
 
+        # Screen rect (left, top, w, h) of a window to keep out of the capture
+        # (the View window), or None. The UI publishes this each frame and the
+        # capture thread reads it. Single-attribute read/write is atomic in
+        # CPython, so no lock is needed for one tuple/None value.
+        self._exclusion_rect = None
+
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
     def start(self, preview_callback=None):
@@ -52,7 +58,10 @@ class Pipeline:
             samplerate=DEFAULT_AUDIO_SR,
         )
 
-        self._video_capture = VideoCapture(c, self._video_buf, self._pause_event)
+        self._video_capture = VideoCapture(
+            c, self._video_buf, self._pause_event,
+            exclusion_provider=lambda: self._exclusion_rect,
+        )
         self._audio_capture = AudioCapture(c, self._audio_buf, self._pause_event)
         self._video_output  = VideoOutput(
             c, self.cfg.output, self._video_buf,
@@ -192,6 +201,18 @@ class Pipeline:
         self.cfg.capture.window_title = title
         display = repr(title) if title else "'full monitor'"
         logger.info(f"Capture source set to: {display}")
+
+    # ── Capture exclusion (View window) ────────────────────────────────────
+
+    def set_exclusion_rect(self, rect: tuple[int, int, int, int] | None):
+        """
+        Publish the screen rect (left, top, width, height) of a window that
+        should be blanked out of mss captures, or None to clear it. Used by
+        the Linux/mss fallback for keeping the View window from capturing
+        itself; on Windows display affinity handles exclusion and this is
+        harmless. Safe to call from the UI thread.
+        """
+        self._exclusion_rect = rect
 
     # ── Stats ──────────────────────────────────────────────────────────────
 

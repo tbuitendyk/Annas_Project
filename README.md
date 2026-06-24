@@ -19,6 +19,9 @@ Browser/DVD  → Audio loopback → Ring buffer (4s) → AI analysis → Virtual
 - ✅ Virtual camera output (OBS Virtual Camera / v4l2loopback)
 - ✅ Pass-through mode (no AI filtering yet — pipeline only)
 - ✅ Control panel UI with live preview and stats
+- ✅ View Mode window you can place on the *same* monitor as the media —
+     it's excluded from the screen capture (Windows display affinity, or a
+     region mask elsewhere) so it never captures its own output
 - ✅ Frame action system (blur / black / mute / bleep) ready for AI
 
 ## Roadmap

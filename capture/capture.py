@@ -72,6 +72,65 @@ def get_window_rect(title: str) -> tuple[int, int, int, int] | None:
         return None
 
 
+# ── Capture exclusion (keep our own windows out of the captured image) ──────
+
+# WDA_EXCLUDEFROMCAPTURE (Windows 10 2004+): the window is still drawn on the
+# physical monitor but is omitted from screen-capture APIs — including the
+# DXGI Desktop Duplication path that dxcam uses, and Windows Graphics Capture.
+# This is what lets CleanStream's View window sit on top of the media on the
+# SAME monitor without the capture loop grabbing its own (already-cleaned)
+# output, which would otherwise produce an infinite-mirror feedback loop.
+WDA_NONE               = 0x00000000
+WDA_MONITOR            = 0x00000001
+WDA_EXCLUDEFROMCAPTURE = 0x00000011
+
+
+def exclude_from_capture(hwnd: int) -> bool:
+    """
+    Ask Windows to keep window `hwnd` out of screen captures while still
+    drawing it normally on the physical display. Returns True on success.
+
+    No-op (returns False) on non-Windows platforms. On Linux there is no
+    per-window capture-exclusion API for mss, so callers fall back to
+    region-subtraction (see VideoCapture's exclusion_provider).
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        import ctypes.wintypes
+        user32 = ctypes.windll.user32
+
+        # HWNDs are pointer-sized — pin the signatures so 64-bit handles
+        # aren't silently truncated to a 32-bit int by ctypes' defaults.
+        user32.GetAncestor.restype = ctypes.wintypes.HWND
+        user32.GetAncestor.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.UINT]
+        user32.SetWindowDisplayAffinity.restype = ctypes.wintypes.BOOL
+        user32.SetWindowDisplayAffinity.argtypes = [ctypes.wintypes.HWND, ctypes.wintypes.DWORD]
+
+        # Display affinity can only be set on a top-level window. Tk's
+        # winfo_id() may hand back a child HWND, so walk up to the root.
+        GA_ROOT = 2
+        root = user32.GetAncestor(hwnd, GA_ROOT) or hwnd
+
+        if user32.SetWindowDisplayAffinity(root, WDA_EXCLUDEFROMCAPTURE):
+            logger.info("Capture exclusion enabled (WDA_EXCLUDEFROMCAPTURE)")
+            return True
+
+        # Pre-2004 Windows: WDA_MONITOR at least stops the mirror (the window
+        # shows as black in captures instead of being omitted cleanly).
+        if user32.SetWindowDisplayAffinity(root, WDA_MONITOR):
+            logger.warning("Capture exclusion: WDA_EXCLUDEFROMCAPTURE unsupported, "
+                           "using WDA_MONITOR fallback (captures see black here)")
+            return True
+
+        logger.warning("Capture exclusion failed: SetWindowDisplayAffinity returned 0")
+        return False
+    except Exception as e:
+        logger.warning(f"Capture exclusion unavailable: {e}")
+        return False
+
+
 # ── Video capture ──────────────────────────────────────────────────────────
 
 class VideoCapture(threading.Thread):
@@ -87,7 +146,8 @@ class VideoCapture(threading.Thread):
     """
 
     def __init__(self, cfg: CaptureConfig, video_buf: VideoRingBuffer,
-                 pause_event: threading.Event | None = None):
+                 pause_event: threading.Event | None = None,
+                 exclusion_provider=None):
         super().__init__(daemon=True, name="VideoCapture")
         self.cfg = cfg
         self.buf = video_buf
@@ -95,6 +155,12 @@ class VideoCapture(threading.Thread):
         self._stop_event = threading.Event()
         self._frame_count = 0
         self._cam = None
+        # Returns the screen rect (left, top, w, h) of a window to blank out
+        # of mss captures, or None. Used on Linux where there's no OS-level
+        # capture-exclusion API — on Windows WDA_EXCLUDEFROMCAPTURE handles it
+        # and this stays a no-op. Must be callable from this thread without
+        # touching Tk objects (the UI publishes a plain tuple each frame).
+        self._exclusion_provider = exclusion_provider
 
     def run(self):
         window = self.cfg.window_title.strip()
@@ -149,7 +215,8 @@ class VideoCapture(threading.Thread):
                     continue
                 t0 = time.monotonic()
                 img = sct.grab(monitor)
-                frame = np.array(img)[:, :, :3]
+                frame = np.ascontiguousarray(np.array(img)[:, :, :3])
+                frame = self._mask_exclusion(frame, monitor["left"], monitor["top"])
                 frame = self._resize(frame)
                 self.buf.push(frame)
                 self._frame_count += 1
@@ -162,15 +229,14 @@ class VideoCapture(threading.Thread):
 
     def _run_window(self, title: str):
         """
-        Capture a specific window by title.
+        Capture a specific window by tracking its on-screen rectangle.
 
-        On Windows, uses dxcam with a region — this captures directly from
-        the GPU framebuffer before compositing, so overlapping windows
-        (including CleanStream's own view window) are completely invisible.
-        Only the target window's pixels are captured regardless of what's
-        on top of it on screen.
-
-        Falls back to mss region grab on Linux (no pre-compositing capture).
+        Both dxcam (Windows) and mss (Linux) read the *composited* desktop,
+        so a region grab only crops to the window's bounds — it does NOT hide
+        other windows stacked on top of it. Keeping CleanStream's own View
+        window out of the capture is handled separately: by display affinity
+        on Windows (capture.exclude_from_capture) and by region-subtraction on
+        Linux (the exclusion_provider mask).
         """
         if sys.platform == "win32":
             self._run_window_dxcam(title)
@@ -179,8 +245,9 @@ class VideoCapture(threading.Thread):
 
     def _run_window_dxcam(self, title: str):
         """
-        Windows: capture window region directly from GPU using dxcam.
-        Overlapping windows are invisible — only target window pixels captured.
+        Windows: capture the target window's region via dxcam, following it
+        as it moves or resizes. (Self-capture of the View window is prevented
+        by WDA_EXCLUDEFROMCAPTURE, not by region cropping.)
         """
         try:
             import dxcam
@@ -258,9 +325,10 @@ class VideoCapture(threading.Thread):
 
     def _run_window_mss(self, title: str):
         """
-        Linux fallback: mss region grab. Note that overlapping windows
-        WILL appear in the capture on Linux since mss reads the composited
-        display. Keep CleanStream on a separate monitor on Linux.
+        Linux fallback: mss region grab. mss reads the composited display, so
+        windows stacked on top WILL appear in the capture — the View window is
+        kept out via region-subtraction (_mask_exclusion). For best results
+        keep any other overlapping windows off the captured area.
         """
         import mss
         target_interval = 1.0 / self.cfg.fps
@@ -287,7 +355,8 @@ class VideoCapture(threading.Thread):
 
                 try:
                     img = sct.grab(monitor)
-                    frame = np.array(img)[:, :, :3]
+                    frame = np.ascontiguousarray(np.array(img)[:, :, :3])
+                    frame = self._mask_exclusion(frame, monitor["left"], monitor["top"])
                     frame = self._resize(frame)
                     self.buf.push(frame)
                     self._frame_count += 1
@@ -300,6 +369,34 @@ class VideoCapture(threading.Thread):
                     time.sleep(sleep)
 
     # ── Helpers ────────────────────────────────────────────────────────────
+
+    def _mask_exclusion(self, frame: np.ndarray, origin_x: int, origin_y: int) -> np.ndarray:
+        """
+        Blank (paint black) the excluded window's rectangle within a raw
+        grabbed frame, given the frame's top-left in screen coordinates.
+
+        This is the Linux/mss fallback for keeping the View window out of the
+        capture: mss reads the composited desktop, so wherever the View window
+        overlaps the captured area its pixels are already our own output. We
+        can't recover the media behind it there, but blanking the region stops
+        the infinite-mirror feedback. On Windows this is a no-op because the
+        provider is left unset (WDA_EXCLUDEFROMCAPTURE removes the window for
+        us before compositing).
+        """
+        if self._exclusion_provider is None:
+            return frame
+        rect = self._exclusion_provider()
+        if not rect:
+            return frame
+        rl, rt, rw, rh = rect
+        fh, fw = frame.shape[:2]
+        x0 = max(0, rl - origin_x)
+        y0 = max(0, rt - origin_y)
+        x1 = min(fw, rl + rw - origin_x)
+        y1 = min(fh, rt + rh - origin_y)
+        if x1 > x0 and y1 > y0:
+            frame[y0:y1, x0:x1] = 0
+        return frame
 
     def _resize(self, frame: np.ndarray) -> np.ndarray:
         h, w = self.cfg.frame_height, self.cfg.frame_width

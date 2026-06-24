@@ -5,6 +5,7 @@ Tab 1: Monitor — pipeline status, preview, stats, controls
 Tab 2: Training — review flagged detections, label, retrain
 """
 
+import sys
 import json
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -48,8 +49,7 @@ class ControlPanel:
         self._root_fullscreen = False
         self._pre_fullscreen_geometry = None
         self._view_win = None
-        self._view_click_pending = False
-        self._view_click_id = None
+        self._view_excluded = False     # True once kept out of screen capture
         self._view_pause_overlay = None
         self._view_label = None
         self._view_hint = None
@@ -898,6 +898,10 @@ class ControlPanel:
             else:
                 self._pause_btn.config(text="⏸ Pause", bg=self.SURFACE)
 
+            # Mirror pause state onto the View window overlay
+            if self._view_win is not None:
+                self._update_view_pause_overlay(stats.get("paused", False))
+
         scheduler = self._view_win if self._view_win is not None else self.root
         scheduler.after(200, self._tick)
 
@@ -913,6 +917,11 @@ class ControlPanel:
         """
         with self._preview_lock:
             frame = self._preview_frame
+
+        if self._view_win is not None:
+            # Refresh the capture-exclusion rect so the mask tracks the window
+            # as it's dragged/resized (no-op effect on Windows).
+            self._publish_exclusion_rect()
 
         if frame is not None:
             if self._view_win is not None:
@@ -1037,8 +1046,10 @@ class ControlPanel:
         """
         Open a resizable video-only window with native title bar and
         window controls. The user can minimize, maximize, resize, or
-        move it anywhere including onto the media monitor.
-        Space to pause. F11 toggles fullscreen. Esc or X to close.
+        move it anywhere — including onto the same monitor the media is
+        playing on, because the window is kept out of the screen capture
+        (see _apply_capture_exclusion) so it never captures its own output.
+        Space/click to pause. F11 toggles fullscreen. Esc or X to close.
         """
         win = tk.Toplevel(self.root)
         win.title("CleanStream — Output")
@@ -1048,13 +1059,12 @@ class ControlPanel:
 
         win.protocol("WM_DELETE_WINDOW", self._close_view_mode)
         win.bind("<Escape>", lambda e: self._close_view_mode())
-        win.bind("<F11>", lambda e: win.attributes(
-            "-fullscreen", not win.attributes("-fullscreen")))
+        win.bind("<F11>", lambda e: self._view_toggle_fullscreen())
 
         label = tk.Label(win, bg="black", bd=0, highlightthickness=0)
         label.pack(fill="both", expand=True)
 
-        hint = tk.Label(win, text="Space to pause  |  F11 fullscreen  |  Esc to close",
+        hint = tk.Label(win, text="Space/click to pause  |  F11 fullscreen  |  Esc to close",
                         font=("Helvetica Neue", 10), bg="black", fg="#3a3f4f")
         hint.place(relx=1.0, rely=1.0, anchor="se", x=-14, y=-10)
 
@@ -1072,6 +1082,10 @@ class ControlPanel:
         win.bind("<space>", lambda e: self._toggle_pause())
         label.bind("<Button-1>", self._on_view_click)
 
+        # Keep this window out of the screen capture so it can live on the
+        # media monitor without feeding its own output back in.
+        self._apply_capture_exclusion()
+
         # Withdraw control panel to save CPU (no preview rendering while
         # view window is open), but schedule after() on the Toplevel win
         # so the tick loop keeps firing regardless.
@@ -1079,6 +1093,88 @@ class ControlPanel:
         win.lift()
         win.focus_force()
         win.after(3000, self._fade_view_hint)
+
+    def _apply_capture_exclusion(self):
+        """
+        Keep the View window from capturing itself when it's on the media
+        monitor.
+
+        Windows: SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) — the window
+        is drawn on the monitor but omitted from the capture entirely, so the
+        media behind it is what gets captured.
+
+        Other platforms (mss reads the composited desktop, no exclusion API):
+        publish the window's screen rect so the capture loop blanks that
+        region instead (see Pipeline.set_exclusion_rect). The rect is refreshed
+        every frame by _publish_exclusion_rect, so it tracks moves/resizes.
+        """
+        win = self._view_win
+        if win is None:
+            return
+        win.update_idletasks()  # make sure the native window/HWND exists
+        from capture.capture import exclude_from_capture
+        self._view_excluded = exclude_from_capture(win.winfo_id())
+        self._publish_exclusion_rect()
+
+        if self._view_excluded:
+            note = "hidden from capture ✓"
+        elif sys.platform == "win32":
+            note = "⚠ capture exclusion unavailable — move off the media monitor"
+        else:
+            note = "capture-masked"
+        if self._view_hint is not None:
+            self._view_hint.config(
+                text=f"Space/click pause  |  F11 fullscreen  |  Esc close   ·   {note}")
+
+    def _view_toggle_fullscreen(self):
+        win = self._view_win
+        if win is None:
+            return
+        win.attributes("-fullscreen", not win.attributes("-fullscreen"))
+        # Re-assert exclusion — toggling fullscreen can reset window styles on
+        # some platforms. Defer briefly so the window state settles first.
+        from capture.capture import exclude_from_capture
+        win.after(60, lambda: exclude_from_capture(win.winfo_id()))
+
+    def _publish_exclusion_rect(self):
+        """
+        Push the View window's current screen rectangle to the pipeline so the
+        mss capture path can blank it (the non-Windows fallback). Runs on the
+        UI thread; the capture thread only ever reads the published tuple and
+        never touches Tk. No-op effect on Windows, where display affinity
+        already removes the window from the capture.
+        """
+        win = self._view_win
+        rect = None
+        if win is not None:
+            try:
+                if win.winfo_viewable():
+                    rect = (win.winfo_rootx(), win.winfo_rooty(),
+                            win.winfo_width(), win.winfo_height())
+            except Exception:
+                rect = None
+        try:
+            self.pipeline.set_exclusion_rect(rect)
+        except Exception:
+            pass
+
+    def _on_view_click(self, event=None):
+        """Click anywhere on the video toggles pause/resume."""
+        self._toggle_pause()
+
+    def _update_view_pause_overlay(self, paused: bool):
+        """Show the ⏸ overlay while paused, hide it while playing."""
+        ov = self._view_pause_overlay
+        if ov is None:
+            return
+        try:
+            if paused:
+                ov.place(relx=0.5, rely=0.5, anchor="center")
+                ov.lift()
+            else:
+                ov.place_forget()
+        except Exception:
+            pass
 
     def _fade_view_hint(self):
         if self._view_hint is not None:
@@ -1094,11 +1190,15 @@ class ControlPanel:
             except Exception:
                 pass
         self._view_win = None
-        self._view_click_pending = False
-        self._view_click_id = None
+        self._view_excluded = False
         self._view_pause_overlay = None
         self._view_label = None
         self._view_hint = None
+        # Stop masking the (now closed) window out of the capture.
+        try:
+            self.pipeline.set_exclusion_rect(None)
+        except Exception:
+            pass
         self.root.deiconify()
         self.root.lift()
         self.root.focus_force()
