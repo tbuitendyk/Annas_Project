@@ -1,0 +1,24 @@
+[capture]
+monitor_index = 0
+window_title = ""
+fps = 24
+frame_width = 1920
+frame_height = 1080
+audio_device_in = ""
+audio_device_out = ""
+audio_samplerate = 44100
+audio_channels = 2
+
+[buffer]
+delay_seconds = 4.0
+max_seconds = 10.0
+
+[output]
+virtual_camera_device = ""
+preview_enabled = true
+preview_scale = 0.4
+
+[filter]
+enabled = false
+audio_enabled = false
+video_enabled = false

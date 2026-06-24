@@ -1,0 +1,446 @@
+{
+  "jesus": {
+    "severity": "severe",
+    "custom": true
+  },
+  "jesus christ": {
+    "severity": "severe",
+    "custom": true
+  },
+  "christ": {
+    "severity": "severe",
+    "custom": true
+  },
+  "goddamn": {
+    "severity": "mild",
+    "custom": false
+  },
+  "god damn": {
+    "severity": "mild",
+    "custom": false
+  },
+  "oh my god": {
+    "severity": "moderate",
+    "custom": true
+  },
+  "omg": {
+    "severity": "mild",
+    "custom": false
+  },
+  "for god s sake": {
+    "severity": "severe",
+    "custom": true
+  },
+  "for christ s sake": {
+    "severity": "severe",
+    "custom": true
+  },
+  "damn": {
+    "severity": "mild",
+    "custom": false
+  },
+  "dammit": {
+    "severity": "mild",
+    "custom": false
+  },
+  "crap": {
+    "severity": "mild",
+    "custom": false
+  },
+  "hell": {
+    "severity": "mild",
+    "custom": false
+  },
+  "ass": {
+    "severity": "mild",
+    "custom": false
+  },
+  "butt": {
+    "severity": "mild",
+    "custom": false
+  },
+  "piss": {
+    "severity": "mild",
+    "custom": false
+  },
+  "bastard": {
+    "severity": "mild",
+    "custom": false
+  },
+  "bloody": {
+    "severity": "mild",
+    "custom": false
+  },
+  "bollocks": {
+    "severity": "mild",
+    "custom": false
+  },
+  "bugger": {
+    "severity": "mild",
+    "custom": false
+  },
+  "sod": {
+    "severity": "mild",
+    "custom": false
+  },
+  "git": {
+    "severity": "mild",
+    "custom": false
+  },
+  "screw": {
+    "severity": "mild",
+    "custom": false
+  },
+  "freaking": {
+    "severity": "mild",
+    "custom": false
+  },
+  "frigging": {
+    "severity": "severe",
+    "custom": true
+  },
+  "frick": {
+    "severity": "mild",
+    "custom": false
+  },
+  "heck": {
+    "severity": "mild",
+    "custom": false
+  },
+  "shoot": {
+    "severity": "mild",
+    "custom": false
+  },
+  "shit": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "shitty": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "bullshit": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "asshole": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "bitch": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "bitchy": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "dick": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "cock": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "pussy": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "cunt": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "tits": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "boobs": {
+    "severity": "mild",
+    "custom": true
+  },
+  "balls": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "jerk": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "jackass": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "dipshit": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "douchebag": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "prick": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "twat": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "whore": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "slut": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "skank": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "boner": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "erection": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "orgasm": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "fuck": {
+    "severity": "severe",
+    "custom": false
+  },
+  "fucking": {
+    "severity": "severe",
+    "custom": false
+  },
+  "fucker": {
+    "severity": "severe",
+    "custom": false
+  },
+  "motherfucker": {
+    "severity": "severe",
+    "custom": false
+  },
+  "fucked": {
+    "severity": "severe",
+    "custom": false
+  },
+  "nigger": {
+    "severity": "severe",
+    "custom": false
+  },
+  "nigga": {
+    "severity": "severe",
+    "custom": false
+  },
+  "faggot": {
+    "severity": "severe",
+    "custom": false
+  },
+  "fag": {
+    "severity": "severe",
+    "custom": false
+  },
+  "dyke": {
+    "severity": "severe",
+    "custom": false
+  },
+  "retard": {
+    "severity": "severe",
+    "custom": false
+  },
+  "spic": {
+    "severity": "severe",
+    "custom": false
+  },
+  "chink": {
+    "severity": "severe",
+    "custom": false
+  },
+  "kike": {
+    "severity": "severe",
+    "custom": false
+  },
+  "wetback": {
+    "severity": "severe",
+    "custom": false
+  },
+  "cracker": {
+    "severity": "severe",
+    "custom": false
+  },
+  "mierda": {
+    "severity": "mild",
+    "custom": false
+  },
+  "carajo": {
+    "severity": "mild",
+    "custom": false
+  },
+  "cono": {
+    "severity": "mild",
+    "custom": false
+  },
+  "hostia": {
+    "severity": "mild",
+    "custom": false
+  },
+  "joder": {
+    "severity": "mild",
+    "custom": false
+  },
+  "ostia": {
+    "severity": "mild",
+    "custom": false
+  },
+  "cabron": {
+    "severity": "mild",
+    "custom": false
+  },
+  "idiota": {
+    "severity": "mild",
+    "custom": false
+  },
+  "imbecil": {
+    "severity": "mild",
+    "custom": false
+  },
+  "estupido": {
+    "severity": "mild",
+    "custom": false
+  },
+  "estupida": {
+    "severity": "mild",
+    "custom": false
+  },
+  "maldito": {
+    "severity": "mild",
+    "custom": false
+  },
+  "maldita": {
+    "severity": "mild",
+    "custom": false
+  },
+  "dios mio": {
+    "severity": "mild",
+    "custom": false
+  },
+  "puta": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "puto": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "pendejo": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "pendeja": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "chingada": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "chingado": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "verga": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "polla": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "culo": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "culero": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "culera": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "mamon": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "maricon": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "chinga": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "chingate": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "pinche": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "guey": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "wey": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "cabrona": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "perra": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "zorra": {
+    "severity": "moderate",
+    "custom": false
+  },
+  "hijo de puta": {
+    "severity": "severe",
+    "custom": false
+  },
+  "hijodeputa": {
+    "severity": "severe",
+    "custom": false
+  },
+  "me cago": {
+    "severity": "severe",
+    "custom": false
+  },
+  "vete a la mierda": {
+    "severity": "severe",
+    "custom": false
+  },
+  "negro de mierda": {
+    "severity": "severe",
+    "custom": false
+  },
+  "maricon de mierda": {
+    "severity": "severe",
+    "custom": false
+  },
+  "god": {
+    "severity": "severe",
+    "custom": true
+  }
+}

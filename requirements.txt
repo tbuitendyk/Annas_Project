@@ -1,0 +1,42 @@
+# CleanStream dependencies
+# Install with: py -3.13 -m pip install -r requirements.txt
+# Requires Python 3.10+
+
+# ── Screen & video capture ─────────────────────────────────────────────────
+opencv-python>=4.8.0            # frame processing, resize, blur, color conversion
+dxcam>=0.0.5; platform_system=="Windows"  # fast DirectX screen capture (Windows only)
+mss>=9.0.1                      # cross-platform screen/window capture
+
+# ── Audio capture & playback ───────────────────────────────────────────────
+sounddevice>=0.4.6              # audio capture from virtual cable + speaker output
+scipy>=1.11.0                   # high-quality audio resampling (resample_poly)
+
+# ── Numeric / array processing ─────────────────────────────────────────────
+numpy>=1.24.0                   # frame buffers, audio sample arrays
+
+# ── Virtual camera output ──────────────────────────────────────────────────
+pyvirtualcam>=0.11.0            # push frames to OBS Virtual Camera / v4l2loopback
+
+# ── AI — audio pipeline ────────────────────────────────────────────────────
+openai-whisper>=20231117        # speech-to-text transcription (Whisper small model)
+scikit-learn>=1.3.0             # logistic regression text classifier (Layer 2)
+
+# ── AI — vision pipeline (Phase 3, not yet active) ────────────────────────
+# torch>=2.0.0                  # uncomment when Phase 3 vision model is added
+# torchvision>=0.15.0
+
+# ── UI ─────────────────────────────────────────────────────────────────────
+# tkinter                       # bundled with Python — do NOT pip install
+Pillow>=10.0.0                  # frame → PhotoImage conversion for UI preview
+
+# ── Windows-specific ───────────────────────────────────────────────────────
+pywin32>=306; platform_system=="Windows"  # window enumeration + media key injection
+
+# ── Utilities ──────────────────────────────────────────────────────────────
+loguru>=0.7.0                   # structured logging with colors + file rotation
+pydantic>=2.0.0,<3.0.0          # config schema validation
+toml>=0.10.2                    # read/write cleanstream.toml config file
+
+# ── Virtual audio drivers (install separately — not pip packages) ──────────
+# Windows: VB-Audio Virtual Cable   https://vb-audio.com/Cable/
+# Linux:   PipeWire null sink       see SETUP.md

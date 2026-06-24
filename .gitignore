@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# CleanStream runtime files
+cleanstream.log
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Model weights (large binary files — Phase 2/3 vision models)
+# NOTE: the audio classifier.pkl (small) and word-list JSON ARE tracked;
+# only heavyweight weight formats are ignored here.
+*.pt
+*.pth
+*.onnx
