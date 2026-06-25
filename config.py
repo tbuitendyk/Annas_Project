@@ -92,7 +92,7 @@ class ContentFilterConfig(BaseModel):
     sample_hz: float = Field(6.0, ge=1.0, le=30.0,
                              description="Frames per second analyzed by the detector")
     skip_buffer_seconds: float = Field(
-        180.0, ge=0.0, le=600.0,
+        60.0, ge=0.0, le=600.0,
         description="Lookahead for seamless skipping of 'severe' scenes; "
                     "beyond this length a scene is blacked out + muted instead")
     categories: dict[str, str] = Field(default_factory=default_categories,
