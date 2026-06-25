@@ -22,14 +22,16 @@ import time
 import threading
 from loguru import logger
 
-from buffer.ring_buffer import VideoRingBuffer
+from buffer.ring_buffer import VideoRingBuffer, AudioRingBuffer
 from models.vision.detector import ContentDetector, decide_frame_action
 
 
 class VideoAnalysisPipeline(threading.Thread):
-    def __init__(self, video_buf: VideoRingBuffer, content_cfg):
+    def __init__(self, video_buf: VideoRingBuffer, content_cfg,
+                 audio_buf: AudioRingBuffer | None = None):
         super().__init__(daemon=True, name="VideoAnalysis")
         self.buf = video_buf
+        self.audio_buf = audio_buf             # muted in lockstep on 'severe'
         self.cfg = content_cfg                 # config.ContentFilterConfig
         self._stop_event = threading.Event()
         self._detector = None
@@ -89,6 +91,11 @@ class VideoAnalysisPipeline(threading.Thread):
                 vf_action, vf_regions = self._to_frame_action(action, regions)
                 updates = {f.timestamp: (vf_action, vf_regions) for f in window}
                 self.buf.update_actions(updates)
+                # Severe scenes black the video — mute the matching audio span
+                # too so nothing leaks while the picture is gone. (Seamless
+                # skip in slice 2 will drop both instead of mute/black.)
+                if action == "skip":
+                    self._mute_audio_window(window[0].timestamp, window[-1].timestamp)
                 logger.debug(f"VideoAnalysis: {action} over {len(window)} frames "
                              f"(regions={len(vf_regions)})")
 
@@ -96,6 +103,21 @@ class VideoAnalysisPipeline(threading.Thread):
             sleep = interval - elapsed
             if sleep > 0:
                 time.sleep(sleep)
+
+    def _mute_audio_window(self, t_lo: float, t_hi: float):
+        """Mute audio chunks captured within [t_lo, t_hi] (monotonic stamps)."""
+        if self.audio_buf is None:
+            return
+        try:
+            now = time.monotonic()
+            # age = now - timestamp; timestamp in [t_lo, t_hi] -> age in
+            # [now - t_hi, now - t_lo]. Pad slightly so chunk edges are covered.
+            chunks = self.audio_buf.peek_window(max(0.0, now - t_hi - 0.1),
+                                                now - t_lo + 0.1)
+            if chunks:
+                self.audio_buf.update_actions({c.timestamp: ("mute", []) for c in chunks})
+        except Exception as e:
+            logger.debug(f"VideoAnalysis: audio mute failed: {e}")
 
     def stop(self):
         self._stop_event.set()

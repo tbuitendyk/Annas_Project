@@ -269,7 +269,8 @@ class Pipeline:
         if self._video_analysis is not None:
             logger.info("Vision model already attached")
             return
-        self._video_analysis = VideoAnalysisPipeline(self._video_buf, self.cfg.content)
+        self._video_analysis = VideoAnalysisPipeline(
+            self._video_buf, self.cfg.content, audio_buf=self._audio_buf)
         self._video_analysis.start()
         self._threads.append(self._video_analysis)
         logger.info("Vision model attached: NudeNet + CLIP content detector")
