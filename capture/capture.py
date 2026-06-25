@@ -145,6 +145,13 @@ class VideoCapture(threading.Thread):
     buffer does not grow.
     """
 
+    # A frame is treated as "blank" if every sampled pixel is at/near zero.
+    # DRM-protected video on a hardware overlay plane is blacked out by the OS
+    # at exactly 0; real video — even dark scenes — almost always has some
+    # non-zero pixels (UI chrome, codec noise). A sustained run of blank frames
+    # is the signature of protected content the capture API can't see.
+    BLANK_PIXEL_MAX = 6
+
     def __init__(self, cfg: CaptureConfig, video_buf: VideoRingBuffer,
                  pause_event: threading.Event | None = None,
                  exclusion_provider=None):
@@ -155,6 +162,9 @@ class VideoCapture(threading.Thread):
         self._stop_event = threading.Event()
         self._frame_count = 0
         self._cam = None
+        # Blank/DRM detection state (see _emit / BLANK_PIXEL_MAX).
+        self._blank_run = 0          # consecutive blank frames seen
+        self._blank_warned = False   # have we logged the current blank run?
         # Returns the screen rect (left, top, w, h) of a window to blank out
         # of mss captures, or None. Used on Linux where there's no OS-level
         # capture-exclusion API — on Windows WDA_EXCLUDEFROMCAPTURE handles it
@@ -196,8 +206,7 @@ class VideoCapture(threading.Thread):
             frame = self._cam.get_latest_frame()
             if frame is not None:
                 frame = self._resize(frame)
-                self.buf.push(frame)
-                self._frame_count += 1
+                self._emit(frame)
             else:
                 time.sleep(0.001)
 
@@ -218,8 +227,7 @@ class VideoCapture(threading.Thread):
                 frame = np.ascontiguousarray(np.array(img)[:, :, :3])
                 frame = self._mask_exclusion(frame, monitor["left"], monitor["top"])
                 frame = self._resize(frame)
-                self.buf.push(frame)
-                self._frame_count += 1
+                self._emit(frame)
                 elapsed = time.monotonic() - t0
                 sleep = target_interval - elapsed
                 if sleep > 0:
@@ -302,8 +310,7 @@ class VideoCapture(threading.Thread):
                 frame = cam.get_latest_frame()
                 if frame is not None:
                     frame = self._resize(frame)
-                    self.buf.push(frame)
-                    self._frame_count += 1
+                    self._emit(frame)
             except Exception as e:
                 logger.warning(f"VideoCapture: dxcam frame error: {e}")
                 try:
@@ -358,8 +365,7 @@ class VideoCapture(threading.Thread):
                     frame = np.ascontiguousarray(np.array(img)[:, :, :3])
                     frame = self._mask_exclusion(frame, monitor["left"], monitor["top"])
                     frame = self._resize(frame)
-                    self.buf.push(frame)
-                    self._frame_count += 1
+                    self._emit(frame)
                 except Exception as e:
                     logger.warning(f"VideoCapture: grab failed: {e}")
 
@@ -397,6 +403,42 @@ class VideoCapture(threading.Thread):
         if x1 > x0 and y1 > y0:
             frame[y0:y1, x0:x1] = 0
         return frame
+
+    def _emit(self, frame: np.ndarray) -> None:
+        """
+        Push a captured frame to the buffer, watching for a sustained run of
+        all-black frames — the signature of DRM-protected content the capture
+        API renders as black (hardware overlay plane / WDA exclusion). Warns
+        once per blank run so the operator knows the source isn't visible
+        rather than silently streaming black to the virtual camera.
+        """
+        # Subsample for a cheap reduction — an all-black frame is black at any
+        # stride, and this keeps the check ~1/64th the cost of a full max().
+        if frame.size and int(frame[::8, ::8].max()) <= self.BLANK_PIXEL_MAX:
+            self._blank_run += 1
+            warn_at = max(1, int(self.cfg.fps * 2))  # ~2 s of solid black
+            if self._blank_run >= warn_at and not self._blank_warned:
+                self._blank_warned = True
+                logger.warning(
+                    f"VideoCapture: source has been BLACK for ~{self._blank_run / self.cfg.fps:.0f}s. "
+                    "This is the signature of DRM-protected video (e.g. Netflix/"
+                    "Disney+ via hardware DRM) that screen capture cannot see. "
+                    "Try disabling the browser's hardware acceleration, or expect "
+                    "audio-only filtering for this source."
+                )
+        else:
+            if self._blank_warned:
+                logger.info("VideoCapture: source visible again (no longer black).")
+            self._blank_run = 0
+            self._blank_warned = False
+
+        self.buf.push(frame)
+        self._frame_count += 1
+
+    @property
+    def source_blank(self) -> bool:
+        """True once the source has been solid black for ~2s+ (likely DRM)."""
+        return self._blank_run >= max(1, int(self.cfg.fps * 2))
 
     def _resize(self, frame: np.ndarray) -> np.ndarray:
         h, w = self.cfg.frame_height, self.cfg.frame_width

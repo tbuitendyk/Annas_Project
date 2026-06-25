@@ -226,6 +226,7 @@ class Pipeline:
             "frames_out":    self._frames_out,
             "audio_ai":      audio_ai,
             "paused":        self.paused,
+            "source_blank":  self._video_capture.source_blank if self._video_capture else False,
         }
 
     # ── AI hooks ───────────────────────────────────────────────────────────
