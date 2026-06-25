@@ -1063,6 +1063,29 @@ class ControlPanel:
             self._update_stage(stage, self.GREEN)
         self._update_stage("ai", self.MUTED)
 
+        # Auto-start video content filtering if enabled in the Content tab.
+        if self.pipeline.cfg.content.enabled:
+            self._update_stage("ai", self.AMBER)
+            if hasattr(self, "_content_status"):
+                self._content_status.config(text="Loading detection models…", fg=self.AMBER)
+            threading.Thread(target=self._load_vision_model, daemon=True).start()
+
+    def _load_vision_model(self):
+        try:
+            self.pipeline.attach_vision_model()
+            ready = (self.pipeline._video_analysis is not None
+                     and self.pipeline._video_analysis._ready)
+            msg = ("Content detection active ✓" if ready
+                   else "No detection backend — install nudenet / open_clip_torch")
+            color = self.GREEN if ready else self.RED
+            self.root.after(0, lambda: self._update_stage("ai", self.GREEN if ready else self.RED))
+        except Exception as e:
+            logger.error(f"Failed to load vision model: {e}")
+            msg, color = f"Vision load failed: {e}", self.RED
+            self.root.after(0, lambda: self._update_stage("ai", self.RED))
+        if hasattr(self, "_content_status"):
+            self.root.after(0, lambda: self._content_status.config(text=msg, fg=color))
+
     def _stop(self):
         self.pipeline.stop()
         self._running = False

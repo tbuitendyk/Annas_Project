@@ -29,6 +29,7 @@ class Pipeline:
         self._video_buf: VideoRingBuffer | None = None
         self._audio_buf: AudioRingBuffer | None = None
         self._audio_analysis = None
+        self._video_analysis = None
         self._frames_out = 0
 
         # Shared pause state — set = paused
@@ -97,6 +98,8 @@ class Pipeline:
         logger.info("Pipeline stopping...")
         if self._audio_analysis is not None:
             self._audio_analysis.stop()
+        if self._video_analysis is not None:
+            self._video_analysis.stop()
         for t in [self._video_capture, self._audio_capture,
                   self._video_output, self._audio_output]:
             if t is not None:
@@ -104,6 +107,9 @@ class Pipeline:
         for t in self._threads:
             t.join(timeout=3.0)
         self._threads.clear()
+        # Drop analysis handles so a subsequent start() re-attaches fresh ones.
+        self._audio_analysis = None
+        self._video_analysis = None
         logger.info("Pipeline stopped")
 
     # ── Pause / Resume ─────────────────────────────────────────────────────
@@ -220,11 +226,15 @@ class Pipeline:
         audio_ai = {}
         if self._audio_analysis is not None:
             audio_ai = self._audio_analysis.stats
+        video_ai = {}
+        if self._video_analysis is not None:
+            video_ai = self._video_analysis.stats
         return {
             "video_frames":  self._video_buf.stats["buffered_frames"] if self._video_buf else 0,
             "audio_seconds": self._audio_buf.buffered_seconds if self._audio_buf else 0.0,
             "frames_out":    self._frames_out,
             "audio_ai":      audio_ai,
+            "video_ai":      video_ai,
             "paused":        self.paused,
             "source_blank":  self._video_capture.source_blank if self._video_capture else False,
         }
@@ -244,5 +254,22 @@ class Pipeline:
         self._threads.append(self._audio_analysis)
         logger.info(f"Audio model attached: Whisper {whisper_model_size} + classifier")
 
-    def attach_vision_model(self, model):
-        logger.info(f"Vision model attached: {model}")
+    def attach_vision_model(self):
+        """
+        Start the video content-analysis pipeline (hybrid NudeNet + CLIP). It
+        samples buffered frames, decides per-frame actions from the user's
+        content-category severities, and stamps the ring buffer. Loads the
+        models in its own thread; call only after start(). No-op if the buffer
+        isn't up yet.
+        """
+        from models.vision.vision_pipeline import VideoAnalysisPipeline
+        if self._video_buf is None:
+            logger.error("Pipeline not started — call start() first")
+            return
+        if self._video_analysis is not None:
+            logger.info("Vision model already attached")
+            return
+        self._video_analysis = VideoAnalysisPipeline(self._video_buf, self.cfg.content)
+        self._video_analysis.start()
+        self._threads.append(self._video_analysis)
+        logger.info("Vision model attached: NudeNet + CLIP content detector")

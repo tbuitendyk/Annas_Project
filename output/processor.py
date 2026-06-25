@@ -32,7 +32,10 @@ def process_video_frame(vf: VideoFrame) -> np.ndarray:
     if vf.action == "pass":
         return vf.frame
 
-    if vf.action == "black":
+    # "skip" frames are seamlessly dropped by the output thread when the skip
+    # buffer can cover the scene; if one reaches here (buffer drained, or the
+    # seamless path is unavailable) it falls back to solid black.
+    if vf.action in ("black", "skip"):
         return np.zeros_like(vf.frame)
 
     if vf.action == "blur":

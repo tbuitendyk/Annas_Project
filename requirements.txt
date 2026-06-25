@@ -21,9 +21,17 @@ pyvirtualcam>=0.11.0            # push frames to OBS Virtual Camera / v4l2loopba
 openai-whisper>=20231117        # speech-to-text transcription (Whisper small model)
 scikit-learn>=1.3.0             # logistic regression text classifier (Layer 2)
 
-# ── AI — vision pipeline (Phase 3, not yet active) ────────────────────────
-# torch>=2.0.0                  # uncomment when Phase 3 vision model is added
-# torchvision>=0.15.0
+# ── AI — vision pipeline (content detection) ───────────────────────────────
+# Hybrid detector: NudeNet (explicit nudity + boxes) + CLIP zero-shot
+# (kissing / bedroom / violence / gore via text prompts).
+torch>=2.0.0                    # CLIP + NudeNet inference backend
+torchvision>=0.15.0             # image transforms for the vision models
+open-clip-torch>=2.20.0         # CLIP zero-shot scoring of fuzzy categories
+nudenet>=3.0.0                  # explicit-nudity detection with bounding boxes
+# GPU is used automatically when available (Content tab: device = auto).
+# For NVIDIA GPU acceleration install a CUDA build of torch from
+# https://pytorch.org/get-started/locally/ , and optionally:
+# onnxruntime-gpu>=1.16.0       # CUDA execution provider for NudeNet (ONNX)
 
 # ── UI ─────────────────────────────────────────────────────────────────────
 # tkinter                       # bundled with Python — do NOT pip install
