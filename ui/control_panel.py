@@ -85,9 +85,9 @@ class ControlPanel:
         # Fullscreen / view-mode state
         self._root_fullscreen = False
         self._pre_fullscreen_geometry = None
+        self._root_excluded = False     # control panel kept out of capture
         self._view_win = None
         self._view_excluded = False     # True once kept out of screen capture
-        self._view_pause_overlay = None
         self._view_label = None
         self._view_hint = None
 
@@ -97,6 +97,9 @@ class ControlPanel:
 
         self._build_ui()
         self._bind_fullscreen_keys()
+        # Hide the control panel from the screen capture so it can sit on the
+        # same monitor as the media (same ability as the View window).
+        self._apply_root_capture_exclusion()
         self._tick()
         self._frame_tick()
 
@@ -130,15 +133,6 @@ class ControlPanel:
             cursor="hand2", command=self._toggle
         )
         self._btn.pack(side="right")
-
-        self._pause_btn = tk.Button(
-            header, text="⏸ Pause", font=("Helvetica Neue", 11, "bold"),
-            bg=self.SURFACE, fg=self.MUTED, relief="flat", padx=12, pady=6,
-            activebackground="#2d3148", cursor="hand2",
-            command=self._toggle_pause,
-            state="disabled"
-        )
-        self._pause_btn.pack(side="right", padx=(0, 8))
 
         self._view_btn = tk.Button(
             header, text="⛶ View Mode", font=("Helvetica Neue", 11, "bold"),
@@ -921,7 +915,6 @@ class ControlPanel:
         self._btn.config(text="Stop", bg=self.RED)
         self._set_status("Running", self.GREEN)
         self._audio_filter_cb.config(state="normal")
-        self._pause_btn.config(state="normal", fg=self.TEXT)
         self._ai_status.config(text="(check to enable)", fg=self.MUTED)
         for stage in ["capture", "buffer", "output"]:
             self._update_stage(stage, self.GREEN)
@@ -935,8 +928,6 @@ class ControlPanel:
         self._btn.config(text="Start", bg=self.ACCENT)
         self._set_status("Stopped", self.MUTED)
         self._audio_filter_cb.config(state="disabled")
-        self._pause_btn.config(text="⏸ Pause", state="disabled",
-                               bg=self.SURFACE, fg=self.MUTED)
         self._ai_status.config(text="(start pipeline first)", fg=self.MUTED)
         for stage in self._stage_labels:
             self._update_stage(stage, self.MUTED)
@@ -963,12 +954,6 @@ class ControlPanel:
             self.root.after(0, lambda: self._ai_status.config(
                 text=f"Failed to load: {e}", fg=self.RED))
             self.root.after(0, lambda: self._update_stage("ai", self.RED))
-
-    def _toggle_pause(self):
-        """Toggle pipeline pause/resume."""
-        if not self._running:
-            return
-        self.pipeline.toggle_pause()
 
     def _refresh_window_list(self):
         """Refresh the capture source dropdown with current open windows."""
@@ -1031,16 +1016,6 @@ class ControlPanel:
                 text=str(det) if ai else "—",
                 fg=self.RED if det > 0 else self.TEXT)
 
-            # Keep pause button label in sync
-            if stats.get("paused"):
-                self._pause_btn.config(text="▶ Resume", bg=self.GREEN)
-            else:
-                self._pause_btn.config(text="⏸ Pause", bg=self.SURFACE)
-
-            # Mirror pause state onto the View window overlay
-            if self._view_win is not None:
-                self._update_view_pause_overlay(stats.get("paused", False))
-
         scheduler = self._view_win if self._view_win is not None else self.root
         scheduler.after(200, self._tick)
 
@@ -1057,10 +1032,10 @@ class ControlPanel:
         with self._preview_lock:
             frame = self._preview_frame
 
-        if self._view_win is not None:
-            # Refresh the capture-exclusion rect so the mask tracks the window
-            # as it's dragged/resized (no-op effect on Windows).
-            self._publish_exclusion_rect()
+        # Refresh the capture-exclusion rect so the mask tracks whichever
+        # window is visible (View window, or the control panel) as it's
+        # dragged/resized. No-op effect on Windows (display affinity handles it).
+        self._publish_exclusion_rect()
 
         if frame is not None:
             if self._view_win is not None:
@@ -1168,6 +1143,9 @@ class ControlPanel:
             self.root.overrideredirect(False)
             self.root.geometry(self._pre_fullscreen_geometry or "860x620")
         self._fs_btn.config(text="⤡ Exit Fullscreen" if self._root_fullscreen else "⤢ Fullscreen")
+        # overrideredirect re-creates the native window on some platforms,
+        # which drops display affinity — re-assert capture exclusion.
+        self.root.after(60, self._apply_root_capture_exclusion)
 
     def _exit_root_fullscreen(self, event=None):
         if self._root_fullscreen:
@@ -1188,7 +1166,7 @@ class ControlPanel:
         move it anywhere — including onto the same monitor the media is
         playing on, because the window is kept out of the screen capture
         (see _apply_capture_exclusion) so it never captures its own output.
-        Space/click to pause. F11 toggles fullscreen. Esc or X to close.
+        F11 toggles fullscreen. Esc or X to close.
         """
         win = tk.Toplevel(self.root)
         win.title("CleanStream — Output")
@@ -1203,23 +1181,13 @@ class ControlPanel:
         label = tk.Label(win, bg="black", bd=0, highlightthickness=0)
         label.pack(fill="both", expand=True)
 
-        hint = tk.Label(win, text="Space/click to pause  |  F11 fullscreen  |  Esc to close",
+        hint = tk.Label(win, text="F11 fullscreen  |  Esc to close",
                         font=("Helvetica Neue", 10), bg="black", fg="#3a3f4f")
         hint.place(relx=1.0, rely=1.0, anchor="se", x=-14, y=-10)
-
-        # Pause overlay — shown when paused
-        self._view_pause_overlay = tk.Label(
-            win, text="⏸", font=("Helvetica Neue", 72),
-            bg="black", fg="#ffffff"
-        )
 
         self._view_win = win
         self._view_label = label
         self._view_hint = hint
-
-        # Bind Space and click to pause/resume
-        win.bind("<space>", lambda e: self._toggle_pause())
-        label.bind("<Button-1>", self._on_view_click)
 
         # Keep this window out of the screen capture so it can live on the
         # media monitor without feeding its own output back in.
@@ -1236,6 +1204,38 @@ class ControlPanel:
         win.lift()
         win.focus_force()
         win.after(3000, self._fade_view_hint)
+
+    def _apply_root_capture_exclusion(self):
+        """
+        Keep the control panel itself out of the screen capture, so it can sit
+        on the same monitor as the media — exactly like the View window.
+
+        Windows: SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) draws the
+        panel on the monitor but omits it from the capture. Other platforms
+        rely on the per-frame rect mask published by _publish_exclusion_rect.
+        Safe to call repeatedly; re-applied after deiconify/fullscreen since
+        those can reset the window's display affinity.
+
+        Also applies the same slight translucency the View window uses so the
+        media source (browser/player) doesn't occlusion-pause its video when
+        the panel sits over it — see _prevent_source_pause.
+        """
+        try:
+            self.root.update_idletasks()  # ensure the native HWND exists
+            from capture.capture import exclude_from_capture
+            self._root_excluded = exclude_from_capture(self.root.winfo_id())
+            if self._root_excluded:
+                logger.info("Control panel hidden from screen capture ✓")
+            elif sys.platform == "win32":
+                logger.warning("Control panel capture exclusion unavailable — "
+                               "keep it off the media monitor, or use View Mode.")
+        except Exception as e:
+            logger.warning(f"Control panel capture exclusion failed: {e}")
+        # Anti-occlusion: keep the source from pausing when the panel covers it.
+        try:
+            self.root.attributes("-alpha", VIEW_WINDOW_OPACITY)
+        except Exception as e:
+            logger.debug(f"Could not set control panel opacity (anti-occlusion): {e}")
 
     def _apply_capture_exclusion(self):
         """
@@ -1267,7 +1267,7 @@ class ControlPanel:
             note = "capture-masked"
         if self._view_hint is not None:
             self._view_hint.config(
-                text=f"Space/click pause  |  F11 fullscreen  |  Esc close   ·   {note}")
+                text=f"F11 fullscreen  |  Esc close   ·   {note}")
 
     def _prevent_source_pause(self):
         """
@@ -1312,13 +1312,15 @@ class ControlPanel:
 
     def _publish_exclusion_rect(self):
         """
-        Push the View window's current screen rectangle to the pipeline so the
-        mss capture path can blank it (the non-Windows fallback). Runs on the
-        UI thread; the capture thread only ever reads the published tuple and
-        never touches Tk. No-op effect on Windows, where display affinity
-        already removes the window from the capture.
+        Push the currently-visible CleanStream window's screen rectangle to the
+        pipeline so the mss capture path can blank it (the non-Windows
+        fallback). When View Mode is open that's the View window; otherwise it's
+        the control panel itself, so the panel gets the same on-the-media-
+        monitor masking the View window has. Runs on the UI thread; the capture
+        thread only ever reads the published tuple and never touches Tk. No-op
+        effect on Windows, where display affinity already removes the window.
         """
-        win = self._view_win
+        win = self._view_win if self._view_win is not None else self.root
         rect = None
         if win is not None:
             try:
@@ -1329,24 +1331,6 @@ class ControlPanel:
                 rect = None
         try:
             self.pipeline.set_exclusion_rect(rect)
-        except Exception:
-            pass
-
-    def _on_view_click(self, event=None):
-        """Click anywhere on the video toggles pause/resume."""
-        self._toggle_pause()
-
-    def _update_view_pause_overlay(self, paused: bool):
-        """Show the ⏸ overlay while paused, hide it while playing."""
-        ov = self._view_pause_overlay
-        if ov is None:
-            return
-        try:
-            if paused:
-                ov.place(relx=0.5, rely=0.5, anchor="center")
-                ov.lift()
-            else:
-                ov.place_forget()
         except Exception:
             pass
 
@@ -1365,17 +1349,15 @@ class ControlPanel:
                 pass
         self._view_win = None
         self._view_excluded = False
-        self._view_pause_overlay = None
         self._view_label = None
         self._view_hint = None
-        # Stop masking the (now closed) window out of the capture.
-        try:
-            self.pipeline.set_exclusion_rect(None)
-        except Exception:
-            pass
         self.root.deiconify()
         self.root.lift()
         self.root.focus_force()
+        # The control panel is on screen again — re-assert its own capture
+        # exclusion (deiconify can reset display affinity) so it too can sit
+        # on the media monitor without feeding back into the capture.
+        self._apply_root_capture_exclusion()
         # Restart tick loops on root now that view window is gone
         self.root.after(16, self._frame_tick)
         self.root.after(200, self._tick)
