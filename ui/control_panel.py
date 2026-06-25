@@ -16,6 +16,8 @@ import numpy as np
 from PIL import Image, ImageTk
 from loguru import logger
 
+from config import CONTENT_CATEGORIES, SEVERITY_LEVELS, save_config
+
 FLAGGED_LOG    = Path("flagged_audio.jsonl")
 TRAINING_DATA  = Path("models/audio/training_data.jsonl")
 
@@ -169,16 +171,19 @@ class ControlPanel:
         monitor_tab       = tk.Frame(self._nb, bg=self.BG)
         training_tab      = tk.Frame(self._nb, bg=self.BG)
         wordlist_tab      = tk.Frame(self._nb, bg=self.BG)
+        content_tab       = tk.Frame(self._nb, bg=self.BG)
         troubleshoot_tab  = tk.Frame(self._nb, bg=self.BG)
 
         self._nb.add(monitor_tab,      text="  Monitor  ")
         self._nb.add(training_tab,     text="  Training  ")
         self._nb.add(wordlist_tab,     text="  Word List  ")
+        self._nb.add(content_tab,      text="  Content  ")
         self._nb.add(troubleshoot_tab, text="  Troubleshooting  ")
 
         self._build_monitor_tab(monitor_tab)
         self._build_training_tab(training_tab)
         self._build_wordlist_tab(wordlist_tab)
+        self._build_content_tab(content_tab)
         self._build_troubleshooting_tab(troubleshoot_tab)
 
     # ── Monitor tab ───────────────────────────────────────────────────────
@@ -649,6 +654,144 @@ class ControlPanel:
             self._wl_status.config(
                 text="Word list saved ✓ (will apply next time filter is enabled)",
                 fg=self.GREEN)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # CONTENT TAB — label each category mild / moderate / severe
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _build_content_tab(self, parent):
+        cfg = self.pipeline.cfg.content
+
+        # Header + master switch
+        top = tk.Frame(parent, bg=self.BG, pady=10)
+        top.pack(fill="x", padx=16)
+        tk.Label(top, text="Content filtering", font=("Helvetica Neue", 14, "bold"),
+                 bg=self.BG, fg=self.TEXT).pack(side="left")
+
+        self._content_enable_var = tk.BooleanVar(value=cfg.enabled)
+        tk.Checkbutton(
+            top, text="Enable video content filtering", variable=self._content_enable_var,
+            font=("Helvetica Neue", 11), bg=self.BG, fg=self.TEXT,
+            selectcolor=self.SURFACE, activebackground=self.BG, activeforeground=self.TEXT,
+            highlightthickness=0, bd=0
+        ).pack(side="right")
+
+        # Scrollable body
+        container = tk.Frame(parent, bg=self.BG)
+        container.pack(fill="both", expand=True, padx=16, pady=(0, 4))
+        canvas = tk.Canvas(container, bg=self.BG, highlightthickness=0)
+        scrollbar = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        body = tk.Frame(canvas, bg=self.BG)
+        body.bind("<Configure>",
+                  lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=body, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Legend: what each severity does
+        tk.Label(
+            body,
+            text=("Set a severity for each category. The severity decides the action:\n"
+                  "   •  mild — blur just the offending region (detect-and-localize)\n"
+                  "   •  moderate — blur the whole frame\n"
+                  "   •  severe — skip the scene entirely (video + audio); if it's longer\n"
+                  "         than the skip buffer, cut to black and mute until it ends\n"
+                  "   •  off — ignore this category"),
+            font=("Helvetica Neue", 10), bg=self.BG, fg=self.MUTED,
+            justify="left", anchor="w").pack(fill="x", pady=(2, 10))
+
+        # Per-category severity rows
+        self._content_cat_vars = {}
+        for cat in CONTENT_CATEGORIES:
+            key = cat["key"]
+            current = cfg.categories.get(key, cat["default"])
+            self._content_cat_vars[key] = tk.StringVar(value=current)
+            self._make_category_row(body, cat, self._content_cat_vars[key])
+
+        # Detection settings
+        tk.Label(body, text="Detection", font=("Helvetica Neue", 12, "bold"),
+                 bg=self.BG, fg=self.TEXT, anchor="w").pack(fill="x", pady=(14, 4))
+
+        settings = tk.Frame(body, bg=self.BG)
+        settings.pack(fill="x")
+
+        # Device
+        tk.Label(settings, text="Device", font=("Helvetica Neue", 10),
+                 bg=self.BG, fg=self.TEXT, width=14, anchor="w").grid(row=0, column=0, sticky="w", pady=3)
+        self._content_device_var = tk.StringVar(value=cfg.device)
+        dev_menu = tk.OptionMenu(settings, self._content_device_var, "auto", "gpu", "cpu")
+        dev_menu.config(font=("Helvetica Neue", 10), bg=self.SURFACE, fg=self.TEXT,
+                        activebackground="#2d3148", relief="flat", highlightthickness=0,
+                        width=8)
+        dev_menu["menu"].config(bg=self.SURFACE, fg=self.TEXT)
+        dev_menu.grid(row=0, column=1, sticky="w", pady=3)
+        tk.Label(settings, text="auto = use GPU if available, else CPU",
+                 font=("Helvetica Neue", 9), bg=self.BG, fg=self.MUTED).grid(
+                 row=0, column=2, sticky="w", padx=(10, 0))
+
+        # Skip buffer length
+        tk.Label(settings, text="Skip buffer (s)", font=("Helvetica Neue", 10),
+                 bg=self.BG, fg=self.TEXT, width=14, anchor="w").grid(row=1, column=0, sticky="w", pady=3)
+        self._content_skipbuf_var = tk.StringVar(value=str(cfg.skip_buffer_seconds))
+        tk.Entry(settings, textvariable=self._content_skipbuf_var, width=10,
+                 font=("Helvetica Neue", 10), bg=self.SURFACE, fg=self.TEXT,
+                 insertbackground=self.TEXT, relief="flat").grid(row=1, column=1, sticky="w", pady=3)
+        tk.Label(settings, text="seamless-skip lookahead for severe scenes (0 = always black+mute)",
+                 font=("Helvetica Neue", 9), bg=self.BG, fg=self.MUTED).grid(
+                 row=1, column=2, sticky="w", padx=(10, 0))
+
+        # Save + status
+        bar = tk.Frame(parent, bg=self.BG)
+        bar.pack(fill="x", padx=16, pady=(0, 8))
+        tk.Button(bar, text="Save", font=("Helvetica Neue", 11, "bold"),
+                  bg=self.ACCENT, fg="white", relief="flat", padx=16, pady=4,
+                  activebackground="#3b5bdb", cursor="hand2",
+                  command=self._save_content_settings).pack(side="left")
+        self._content_status = tk.Label(bar, text="", font=("Helvetica Neue", 10),
+                                        bg=self.BG, fg=self.GREEN)
+        self._content_status.pack(side="left", padx=12)
+
+    def _make_category_row(self, parent, cat, var):
+        card = tk.Frame(parent, bg=self.SURFACE, padx=12, pady=8,
+                        highlightthickness=1, highlightbackground="#2d3148")
+        card.pack(fill="x", pady=3)
+
+        text = tk.Frame(card, bg=self.SURFACE)
+        text.pack(side="left", fill="x", expand=True)
+        tk.Label(text, text=cat["label"], font=("Helvetica Neue", 11, "bold"),
+                 bg=self.SURFACE, fg=self.TEXT, anchor="w").pack(fill="x")
+        tk.Label(text, text=cat["desc"], font=("Helvetica Neue", 9),
+                 bg=self.SURFACE, fg=self.MUTED, anchor="w").pack(fill="x")
+
+        menu = tk.OptionMenu(card, var, *SEVERITY_LEVELS)
+        menu.config(font=("Helvetica Neue", 10, "bold"), bg=self.BG, fg=self.TEXT,
+                    activebackground="#2d3148", relief="flat", highlightthickness=0,
+                    width=9)
+        menu["menu"].config(bg=self.SURFACE, fg=self.TEXT)
+        menu.pack(side="right", padx=(8, 0))
+
+    def _save_content_settings(self):
+        c = self.pipeline.cfg.content
+        c.enabled = self._content_enable_var.get()
+        c.device = self._content_device_var.get()
+        try:
+            c.skip_buffer_seconds = max(0.0, min(600.0, float(self._content_skipbuf_var.get())))
+            self._content_skipbuf_var.set(str(c.skip_buffer_seconds))
+        except ValueError:
+            self._content_status.config(text="Skip buffer must be a number", fg=self.RED)
+            return
+        for key, var in self._content_cat_vars.items():
+            c.categories[key] = var.get()
+        try:
+            save_config(self.pipeline.cfg)
+            self._content_status.config(
+                text="Content settings saved ✓ (applied on next Start)", fg=self.GREEN)
+        except Exception as e:
+            logger.warning(f"Could not persist content settings: {e}")
+            self._content_status.config(text=f"Save failed: {e}", fg=self.RED)
+        logger.info(f"Content filter: enabled={c.enabled} device={c.device} "
+                    f"skip_buffer={c.skip_buffer_seconds}s categories={c.categories}")
 
     # ══════════════════════════════════════════════════════════════════════
     # TROUBLESHOOTING TAB
