@@ -176,7 +176,12 @@ class ContentDetector:
             self._nude = NudeDetector()
             logger.info("ContentDetector: NudeNet loaded")
         except Exception as e:
-            logger.warning(f"ContentDetector: NudeNet unavailable ({e})")
+            # Full traceback at debug; a clear one-liner with the exception type
+            # at warning, so a real failure (missing onnxruntime, weight
+            # download, API change) is diagnosable rather than swallowed.
+            logger.opt(exception=True).debug("NudeNet load traceback")
+            logger.warning(f"ContentDetector: NudeNet unavailable: "
+                           f"{type(e).__name__}: {e}")
             self._nude = None
 
     def _detect_nudenet(self, frame_bgr) -> list:
@@ -231,7 +236,9 @@ class ContentDetector:
             self._clip_text = (tfeat, ranges, neutral_range)
             logger.info("ContentDetector: CLIP (ViT-B-32) loaded")
         except Exception as e:
-            logger.warning(f"ContentDetector: CLIP unavailable ({e})")
+            logger.opt(exception=True).debug("CLIP load traceback")
+            logger.warning(f"ContentDetector: CLIP unavailable: "
+                           f"{type(e).__name__}: {e}")
             self._clip = None
             self._clip_text = None
 
